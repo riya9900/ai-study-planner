@@ -1,31 +1,26 @@
 # 📚 AI Study Planner Agent
 
-An interactive web application that helps students and lifelong learners build personalized, realistic study plans using an AI Agent equipped with intelligent calculation tools.
+An AI-powered study planner that helps students create personalized study plans based on their syllabus and exam deadline.
 
-## 🚀 Tech Stack
-- **Frontend / UI:** [Streamlit](https://streamlit.io/)
-- **AI / LLM:** Google Gemini API (`google-genai`)
-- **Agent Logic:** Python with custom scheduling & pacing tools
+## 🚀 Live Demo
 
-## 🛠️ Setup Instructions (Local)
-1. **Clone the repository** (or navigate to project folder)
-2. **Create and activate a virtual environment:**
-   ```bash
-   python -m venv .venv
-   # Windows (PowerShell):
-   .\.venv\Scripts\Activate.ps1
-   # macOS/Linux:
-   source .venv/bin/activate
-   ```
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. **Set up your environment variables:**
-   - Copy `.env.example` to `.env`
-   - Add your Gemini API key from [Google AI Studio](https://aistudio.google.com/)
-5. **Run the Streamlit app:**
-   ```bash
-   streamlit run app.py
-   ```
+👉 [Open AI Study Planner](https://ai-study-planner-gqlve7qorgojoqds3vgb46.streamlit.app/)
 
+## ✨ Features
+
+- 📄 Upload syllabus files
+- 🤖 AI-powered study plan generation
+- 📅 Optional exam date and deadline planning
+- 🔥 Prioritized day-by-day study schedule
+- 🧠 Beginner-friendly study guidance
+
+## 🛠️ Tech Stack
+
+- **Python**
+- **Streamlit**
+- **Google Gemini API**
+- **AI Agent**
+
+## 🎯 Project Goal
+
+The goal of this project is to help students organize their studies and prepare more effectively by generating a personalized study plan from their syllabus and available study time.
