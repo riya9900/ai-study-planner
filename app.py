@@ -134,7 +134,7 @@ st.markdown("""
 # ---------------------------------------------------------
 st.markdown('<div class="main-header">📚 AI Study Planner Agent</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-header">Deadline-driven, syllabus-grounded curriculum engine powered by intelligent AI Agent reasoning.</div>',
+    '<div class="sub-header">Syllabus-grounded, adaptive curriculum engine powered by intelligent AI Agent reasoning.</div>',
     unsafe_allow_html=True
 )
 
@@ -146,13 +146,13 @@ with st.sidebar:
 
     # 1. Subject or Exam Name
     subject = st.text_input(
-        "Subject / Topic or Exam Name",
+        "Subject / Topic or Course Name",
         value=st.session_state.get("prev_subject", ""),
         placeholder="e.g., Operating Systems, Python, AWS Cloud",
-        help="What subject or exam are you preparing for? (If left blank with a syllabus uploaded, it will be detected automatically)."
+        help="What subject are you learning? (If left blank with a syllabus uploaded, it will be detected automatically)."
     )
 
-    # 2. Robust Syllabus File Upload (Supports digital & scanned documents)
+    # 2. Syllabus File Upload
     st.markdown("### 📚 Upload Your Syllabus")
     uploaded_file = st.file_uploader(
         "Upload Syllabus (PDF, PPTX, DOCX, TXT, Images)",
@@ -183,30 +183,43 @@ with st.sidebar:
 
     st.divider()
 
-    # 3. Exam Deadline Date Picker
+    # 3. Optional Exam Deadline Date Picker
     today = datetime.date.today()
-    default_exam_date = today + datetime.timedelta(days=14)
     
     exam_date = st.date_input(
-        "🎯 Exam Date / Deadline",
-        value=default_exam_date,
+        "🎯 Exam Date / Deadline (Optional)",
+        value=None,
         min_value=today,
         max_value=today + datetime.timedelta(days=365),
-        help="The planner will strictly schedule within the days remaining until this date."
+        help="Optional: If you have an upcoming exam, select the date. Leave blank for self-paced study without deadlines."
     )
 
-    # Calculate actual available days (inclusive of today)
-    raw_days_left = (exam_date - today).days
-    total_days = max(1, raw_days_left + 1)
-    is_emergency = total_days <= 3
+    # Dynamic pacing: If exam date is provided, calculate exact countdown; else provide self-paced duration
+    if exam_date is not None:
+        has_deadline = True
+        raw_days_left = (exam_date - today).days
+        total_days = max(1, raw_days_left + 1)
+        is_emergency = total_days <= 3
 
-    if is_emergency:
-        st.markdown(
-            f'<div class="badge-emergency">🚨 <strong>{total_days} Day(s) Left!</strong> Emergency Countdown Mode will activate.</div>',
-            unsafe_allow_html=True
-        )
+        if is_emergency:
+            st.markdown(
+                f'<div class="badge-emergency">🚨 <strong>{total_days} Day(s) Left!</strong> Emergency Countdown Mode will activate.</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption(f"🗓️ **{total_days} days** available until your exam on {exam_date.strftime('%b %d, %Y')}.")
     else:
-        st.caption(f"🗓️ **{total_days} days** available until your exam on {exam_date.strftime('%b %d, %Y')}.")
+        has_deadline = False
+        is_emergency = False
+        total_days = st.number_input(
+            "Planned Study Duration (Days)",
+            min_value=3,
+            max_value=365,
+            value=30,
+            step=1,
+            help="How many days would you like to pace this course over? (Default: 30 days)"
+        )
+        st.caption(f"ℹ️ **Self-Paced Mode**: No exam deadline set. Pacing over {total_days} days.")
 
     # 4. Daily Hours & Knowledge Level
     col_hrs, col_lvl = st.columns(2)
@@ -258,7 +271,6 @@ if generate_btn:
     
     # Auto-detect subject if user left it blank
     if not effective_subject and syllabus_text:
-        # Check if course title is in extracted text
         for line in syllabus_text.splitlines()[:15]:
             if any(k in line.lower() for k in ["course title:", "subject:", "course name:", "course:"]):
                 candidate = line.split(":", 1)[-1].strip()
@@ -269,24 +281,28 @@ if generate_btn:
             effective_subject = syllabus_meta["filename"].rsplit(".", 1)[0].replace("_", " ").title()
 
     if not effective_subject:
-        st.warning("⚠️ Please provide a **Subject / Exam Name** or upload a syllabus file to begin.")
+        st.warning("⚠️ Please provide a **Subject / Course Name** or upload a syllabus file to begin.")
     else:
         st.session_state["prev_subject"] = effective_subject
-        spinnerText = (
-            "🚨 **Agent running in Emergency Crunch Mode**..."
-            if is_emergency else
-            "🤖 **Agent at work**: Reading syllabus, calculating milestones, and building daily schedule..."
-        )
+        
+        if is_emergency:
+            spinnerText = "🚨 **Agent running in Emergency Crunch Mode**..."
+        elif has_deadline:
+            spinnerText = "🤖 **Agent at work**: Scheduling against exam deadline and building curriculum..."
+        else:
+            spinnerText = "🤖 **Agent at work**: Reading syllabus and building comprehensive self-paced plan..."
+            
         with st.spinner(spinnerText):
             try:
+                exam_date_str = exam_date.strftime("%Y-%m-%d") if exam_date else None
                 result = generate_study_plan(
                     subject=effective_subject,
-                    total_days=total_days,
+                    total_days=int(total_days),
                     daily_hours=float(daily_hours),
                     current_level=current_level,
                     learning_style=learning_style,
                     specific_goals=specific_goals.strip(),
-                    exam_date_str=exam_date.strftime("%Y-%m-%d"),
+                    exam_date_str=exam_date_str,
                     syllabus_text=syllabus_text,
                     syllabus_filename=syllabus_meta["filename"] if syllabus_meta else ""
                 )
@@ -307,29 +323,43 @@ if plan_result:
     schedule_data = plan_result.get("schedule_data", {})
     summary = schedule_data.get("summary", {})
     plan_markdown = plan_result.get("plan_markdown", "")
-    is_emg = plan_result.get("is_emergency", False)
+    plan_has_deadline = plan_result.get("has_deadline", False)
+    is_emg = plan_result.get("is_emergency", False) and plan_has_deadline
     has_syl = plan_result.get("has_syllabus", False)
     gen_subj = st.session_state.get("generated_subject", subject)
 
-    # 1. Prominent Exam Countdown Banner
-    days_left = summary.get("days_left", 0)
-    target_dt_str = summary.get("exam_date", str(exam_date))
-    
-    if is_emg:
-        st.markdown(f"""
-        <div class="emergency-banner">
-            <h2 style="margin: 0; color: #FEE2E2; font-size: 1.8rem;">🚨 EXAM COUNTDOWN: {days_left + 1} DAY{'S' if (days_left + 1) != 1 else ''} REMAINING</h2>
-            <p style="margin: 0.4rem 0 0 0; color: #FECACA; font-size: 1.05rem;">
-                Exam Date: <strong>{target_dt_str}</strong> — <strong>Emergency Mode Active</strong> (High-yield focus, core triage, and rapid drills)
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+    # 1. Header Banner (Conditional: Countdown Banner if deadline set, else Self-Paced Banner)
+    if plan_has_deadline:
+        days_left = summary.get("days_left", 0)
+        target_dt_str = summary.get("exam_date", str(st.session_state.get("generated_exam_date", "")))
+        
+        if is_emg:
+            st.markdown(f"""
+            <div class="emergency-banner">
+                <h2 style="margin: 0; color: #FEE2E2; font-size: 1.8rem;">🚨 EXAM COUNTDOWN: {days_left + 1} DAY{'S' if (days_left + 1) != 1 else ''} REMAINING</h2>
+                <p style="margin: 0.4rem 0 0 0; color: #FECACA; font-size: 1.05rem;">
+                    Exam Date: <strong>{target_dt_str}</strong> — <strong>Emergency Mode Active</strong> (High-yield focus, core triage, and rapid drills)
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="countdown-banner">
+                <h2 style="margin: 0; color: #38BDF8; font-size: 1.8rem;">🎯 EXAM COUNTDOWN: {days_left} DAYS LEFT</h2>
+                <p style="margin: 0.4rem 0 0 0; color: #94A3B8; font-size: 1.05rem;">
+                    Target Exam Date: <strong>{target_dt_str}</strong> &nbsp;|&nbsp; Start: <strong>{summary.get('start_date')}</strong>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
     else:
+        # Clean Self-Paced Banner (No countdown, no days remaining, no exam pressure)
         st.markdown(f"""
         <div class="countdown-banner">
-            <h2 style="margin: 0; color: #38BDF8; font-size: 1.8rem;">🎯 EXAM COUNTDOWN: {days_left} DAYS LEFT</h2>
-            <p style="margin: 0.4rem 0 0 0; color: #94A3B8; font-size: 1.05rem;">
-                Target Exam Date: <strong>{target_dt_str}</strong> &nbsp;|&nbsp; Start: <strong>{summary.get('start_date')}</strong>
+            <h2 style="margin: 0; color: #38BDF8; font-size: 1.7rem;">📚 SELF-PACED STUDY ROADMAP</h2>
+            <p style="margin: 0.4rem 0 0 0; color: #94A3B8; font-size: 1.02rem;">
+                Structured <strong>{summary.get('total_days', total_days)}-Day Curriculum</strong> &nbsp;|&nbsp; 
+                Daily Commitment: <strong>{summary.get('daily_hours', daily_hours)} hrs/day</strong> &nbsp;|&nbsp; 
+                Total Budget: <strong>{summary.get('total_study_hours', '-')} Hours</strong>
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -371,7 +401,7 @@ if plan_result:
             use_container_width=True
         )
 
-    # TAB 2: Phase Distribution Breakdown (Pure CSS/HTML, zero pandas/altair)
+    # TAB 2: Phase Distribution Breakdown
     with tab_timeline:
         st.markdown("### 📊 Phase Distribution Breakdown")
         phases = schedule_data.get("phases", [])
@@ -480,21 +510,21 @@ if plan_result:
 
 else:
     # Initial Empty State / Welcome Screen
-    st.info("👈 **To get started:** Upload your syllabus (digital or scanned) or enter your subject in the sidebar, set your exam date, and click **'Generate Study Plan'**.")
+    st.info("👈 **To get started:** Upload your syllabus or enter your subject in the sidebar, set an optional exam date, and click **'Generate Study Plan'**.")
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("""
         <div class="dark-card">
             <h4 style="color: #38BDF8;">📚 Digital & Scanned PDF OCR</h4>
-            <p>Upload digital PDFs, lecture slides (PPTX), or scanned/image-based documents. AI OCR automatically extracts actual units and topics.</p>
+            <p>Upload digital PDFs, lecture slides (PPTX), or scanned documents. AI OCR extracts actual units and topics directly.</p>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown("""
         <div class="dark-card">
-            <h4 style="color: #38BDF8;">🎯 Exact Exam Countdown</h4>
-            <p>Calculates remaining days until your deadline. Automatically triggers <strong>Emergency Mode</strong> for tight deadlines (<= 3 days).</p>
+            <h4 style="color: #38BDF8;">🎯 Optional Exam Deadline</h4>
+            <p>Have an exam? Set a deadline for countdowns and emergency mode. No exam? Enjoy a flexible, self-paced curriculum.</p>
         </div>
         """, unsafe_allow_html=True)
     with col3:

@@ -7,35 +7,39 @@ def calculate_study_schedule(
     current_level: str = "Beginner",
     exam_date_str: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Calculates a realistic, deadline-driven study pace, phase distribution, buffer days, and daily dates.
+    """Calculates study pace, phase distribution, buffer days, and daily dates.
+    Gracefully handles both deadline-driven and self-paced study plans.
 
     Args:
-        total_days: Total number of days available until the exam (inclusive of today).
+        total_days: Total days allocated for the plan.
         daily_hours: Number of study hours dedicated per day.
-        current_level: The student's current proficiency: 'Beginner', 'Intermediate', or 'Advanced'.
+        current_level: 'Beginner', 'Intermediate', or 'Advanced'.
         exam_date_str: Optional ISO format string of exam date ('YYYY-MM-DD').
 
     Returns:
-        A dictionary containing total hours, active study days, buffer days,
-        phase breakdown with hour budgets, concrete milestone calendar dates,
-        and an explicit list of day-by-day dates ending strictly on or before the exam.
+        Dict containing total hours, active study days, buffer days,
+        phase breakdown, milestones, and daily schedule.
     """
     total_days = max(1, int(total_days))
     daily_hours = max(0.5, float(daily_hours))
     level_lower = current_level.lower()
     start_date = datetime.date.today()
 
-    if exam_date_str:
+    has_deadline = bool(exam_date_str and exam_date_str.strip())
+
+    if has_deadline:
         try:
-            target_exam_date = datetime.date.fromisoformat(exam_date_str)
+            target_exam_date = datetime.date.fromisoformat(exam_date_str.strip())
         except ValueError:
             target_exam_date = start_date + datetime.timedelta(days=total_days - 1)
+        days_left = (target_exam_date - start_date).days
+        is_emergency = total_days <= 3
     else:
         target_exam_date = start_date + datetime.timedelta(days=total_days - 1)
+        days_left = None
+        is_emergency = False  # Never activate emergency mode for self-paced learners
 
-    is_emergency = total_days <= 3
-
-    # Calculate buffer / rest days (Emergency mode has 0 buffer days to maximize crunch time)
+    # Buffer / rest days calculation
     if is_emergency:
         buffer_days = 0
         active_days = total_days
@@ -47,9 +51,8 @@ def calculate_study_schedule(
     active_study_hours = round(active_days * daily_hours, 1)
     buffer_hours = round(buffer_days * daily_hours, 1)
 
-    # Determine phase weightings based on mode & starting level
+    # Determine phase weightings
     if is_emergency:
-        # Rapid triage crunch phases
         p1_pct, p2_pct, p3_pct = 0.50, 0.30, 0.20
         p1_name = "Phase 1: High-Yield Core Concepts (Priority Triage)"
         p2_name = "Phase 2: High-Yield Problem Sets & Top 20 MCQs"
@@ -75,7 +78,6 @@ def calculate_study_schedule(
     p2_days = max(1, round(active_days * p2_pct)) if active_days >= 3 else 1
     p3_days = max(1, active_days - (p1_days + p2_days)) if active_days >= 3 else 1
 
-    # Adjust sum of phase days to match active_days exactly
     diff = (p1_days + p2_days + p3_days) - active_days
     if diff != 0:
         p2_days = max(1, p2_days - diff)
@@ -90,11 +92,10 @@ def calculate_study_schedule(
     p3_start = p2_end + datetime.timedelta(days=1)
     p3_end = target_exam_date
 
-    # Build day-by-day calendar items
+    # Build daily calendar items
     daily_calendar = []
     current_date = start_date
     for day_idx in range(1, total_days + 1):
-        # Determine if this day is a buffer day (placed at end of week)
         is_buf = False
         if buffer_days > 0 and not is_emergency:
             if day_idx % 7 == 0:
@@ -106,12 +107,13 @@ def calculate_study_schedule(
             "formatted_date": current_date.strftime("%b %d"),
             "hours": daily_hours if not is_buf else 0,
             "is_buffer": is_buf,
-            "is_exam_day": current_date == target_exam_date
+            "is_exam_day": has_deadline and (current_date == target_exam_date)
         })
         current_date += datetime.timedelta(days=1)
 
-    # Pomodoro calculation
     daily_pomodoro_sessions = max(1, int((daily_hours * 60) // 30))
+
+    final_milestone_title = "Final Exam Deadline" if has_deadline else "Course Completion & Review"
 
     return {
         "summary": {
@@ -124,9 +126,10 @@ def calculate_study_schedule(
             "buffer_hours": buffer_hours,
             "daily_pomodoro_sessions": daily_pomodoro_sessions,
             "is_emergency": is_emergency,
+            "has_deadline": has_deadline,
             "start_date": start_date.strftime("%Y-%m-%d"),
-            "exam_date": target_exam_date.strftime("%Y-%m-%d"),
-            "days_left": (target_exam_date - start_date).days
+            "exam_date": target_exam_date.strftime("%Y-%m-%d") if has_deadline else None,
+            "days_left": days_left
         },
         "phases": [
             {
@@ -151,24 +154,28 @@ def calculate_study_schedule(
                 "days": p3_days,
                 "allocated_hours": round(p3_days * daily_hours, 1),
                 "start_date": p3_start.strftime("%Y-%m-%d"),
-                "target_date": p3_end.strftime("%Y-%m-%d")
+                "target_date": target_exam_date.strftime("%Y-%m-%d")
             }
         ],
         "milestones": [
             {"milestone": "Start & Foundation Review", "date": p1_end.strftime("%b %d, %Y")},
             {"milestone": "Core Mastery & Mid-Point Check", "date": p2_end.strftime("%b %d, %Y")},
-            {"milestone": "Final Exam Deadline", "date": target_exam_date.strftime("%b %d, %Y")}
+            {"milestone": final_milestone_title, "date": target_exam_date.strftime("%b %d, %Y")}
         ],
         "daily_calendar": daily_calendar
     }
 
 if __name__ == "__main__":
-    import json
-    # Test standard mode
-    res_std = calculate_study_schedule(total_days=14, daily_hours=2.0, current_level="Beginner")
-    print("Standard Days Left:", res_std["summary"]["days_left"])
+    # Test optional exam date (self-paced)
+    res_self = calculate_study_schedule(total_days=30, daily_hours=2.0, current_level="Beginner", exam_date_str=None)
+    print("Self-Paced Plan:")
+    print("  has_deadline:", res_self["summary"]["has_deadline"])
+    print("  is_emergency:", res_self["summary"]["is_emergency"])
+    print("  milestone 3:", res_self["milestones"][2]["milestone"])
 
-    # Test emergency mode
-    res_emg = calculate_study_schedule(total_days=2, daily_hours=3.0, current_level="Beginner")
-    print("Emergency Mode:", res_emg["summary"]["is_emergency"])
-    print("Daily Calendar items:", len(res_emg["daily_calendar"]))
+    # Test with exam date
+    res_exam = calculate_study_schedule(total_days=2, daily_hours=3.0, current_level="Beginner", exam_date_str="2026-10-31")
+    print("\nExam Plan:")
+    print("  has_deadline:", res_exam["summary"]["has_deadline"])
+    print("  is_emergency:", res_exam["summary"]["is_emergency"])
+    print("  milestone 3:", res_exam["milestones"][2]["milestone"])

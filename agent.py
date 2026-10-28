@@ -11,36 +11,35 @@ load_dotenv()
 
 SYSTEM_INSTRUCTION = """
 You are an expert AI Study Planner Agent and academic coach.
-Your mission is to craft realistic, deadline-driven, highly actionable, and easy-to-read study plans.
+Your mission is to craft realistic, actionable, and easy-to-read study plans.
 
 ### CORE OPERATING RULES:
 1. **Syllabus Grounding**:
-   - If a syllabus is provided: You MUST treat it as the absolute primary authority. Extract the actual units, modules, and topics directly from it. Do NOT replace them with generic topics.
+   - If a syllabus is provided: You MUST treat it as the primary authority. Extract the actual units, modules, and topics directly from it. Do NOT replace them with generic topics.
    - If NO syllabus is provided: Clearly note that you are designing a standardized curriculum based on the requested subject.
    - NEVER pretend you read a syllabus if none was provided.
 
-2. **Exam-Based Priority**:
+2. **Exam vs. Self-Paced Mode**:
+   - IF NO EXAM DATE IS PROVIDED:
+     - The student is in Self-Paced Learning Mode.
+     - Do NOT mention an exam date, exam countdown, or emergency mode.
+     - Structure the plan for thorough, stress-free mastery across the planned days.
+   - IF AN EXAM DATE IS PROVIDED:
+     - The student has a firm deadline. Strictly ensure all study ends on or before the exam date.
+     - If in Emergency Mode (3 or fewer days): Prioritize high-yield core topics, quick formulas, and rapid-fire MCQs.
+
+3. **Topic Prioritization**:
    - Tag topics with clear priority markers:
-     - 🔥 HIGH PRIORITY: Core, foundational, and high-frequency exam topics.
+     - 🔥 HIGH PRIORITY: Core, foundational, and high-frequency topics.
      - ⚡ MEDIUM PRIORITY: Supporting topics and secondary modules.
-     - 💡 LOW PRIORITY: Nuances or lower-yield topics.
-   - NEVER drop syllabus topics silently. Clearly explain which topics are prioritized due to the available time budget.
+     - 💡 LOW PRIORITY: Nuanced details or optional exploration.
+   - NEVER drop syllabus topics silently.
 
-3. **Deadline Adherence & Calendar Alignment**:
-   - Study time must strictly stop on or before the exam date.
-   - NEVER schedule study after the exam date.
-   - Use the exact dates and day numbers provided by the schedule calculator.
-
-4. **Emergency Countdown Mode (When 3 or fewer days remain)**:
-   - Immediately switch to "🚨 Exam Countdown Mode".
-   - Eliminate non-essential background reading.
-   - Deliver high-yield formula sheets, key definitions, rapid-fire MCQs, and full-syllabus revision.
-
-5. **Beginner-Friendly, Highly Structured Formatting**:
+4. **Beginner-Friendly, Highly Structured Formatting**:
    For every study day, you MUST use the following exact visual template:
 
    ### 📍 DAY [X] — [Day Focus Title]
-   - **📅 Date:** [e.g. 28 Oct]
+   - **📅 Date:** [e.g. 29 Oct]
    - **⏰ Study time:** [e.g. 2 hours]
    - **Priority:** [🔥 High / ⚡ Medium / 💡 Low]
 
@@ -80,21 +79,21 @@ def generate_study_plan(
     syllabus_text: str = "",
     syllabus_filename: str = ""
 ) -> Dict[str, Any]:
-    """Generates a complete study plan grounded in the uploaded syllabus and exam deadline.
+    """Generates a complete study plan grounded in the uploaded syllabus and optional exam deadline.
 
     Args:
         subject: The subject or exam title.
-        total_days: Total days available until the exam.
+        total_days: Total days available for the plan.
         daily_hours: Dedicated hours per day.
         current_level: Experience level.
         learning_style: Preferred learning approach.
         specific_goals: Optional extra focus areas.
-        exam_date_str: ISO string of exam date ('YYYY-MM-DD').
+        exam_date_str: Optional ISO string of exam date ('YYYY-MM-DD').
         syllabus_text: Extracted text from uploaded syllabus document.
         syllabus_filename: Name of the uploaded syllabus file.
 
     Returns:
-        Dict with 'plan_markdown', 'schedule_data', and 'is_emergency'.
+        Dict with 'plan_markdown', 'schedule_data', 'is_emergency', and 'has_deadline'.
     """
     # 1. Run deterministic schedule calculation
     schedule_data = calculate_study_schedule(
@@ -105,6 +104,7 @@ def generate_study_plan(
     )
 
     summary = schedule_data["summary"]
+    has_deadline = summary["has_deadline"]
     is_emergency = summary["is_emergency"]
     daily_cal = schedule_data.get("daily_calendar", [])
 
@@ -131,33 +131,44 @@ CRITICAL INSTRUCTION: Build the plan directly around the units, chapters, and to
 NOTE: No syllabus file was uploaded. Use standard core curriculum for the requested subject.
 """
 
-    # 3. Assemble User Prompt
+    # 3. Assemble User Prompt based on deadline presence
+    if has_deadline:
+        deadline_header = f"""
+- Mode: DEADLINE-DRIVEN PREPARATION
+- Exam Deadline: {summary.get('exam_date')} ({summary.get('days_left')} days remaining)
+- Emergency Mode Active: {'YES 🚨 (CRUNCH MODE)' if is_emergency else 'NO (Standard Pace)'}
+"""
+    else:
+        deadline_header = """
+- Mode: SELF-PACED COMPREHENSIVE LEARNING (No exam deadline specified)
+- Emergency Mode: INACTIVE (Stress-free, thorough pace)
+"""
+
     user_prompt = f"""
 Create a comprehensive study roadmap with the following exact constraints:
 
 📌 STUDENT PROFILE & TIMELINE:
-- Target Subject / Exam: {subject}
-- Exam Deadline: {summary.get('exam_date')} ({summary.get('days_left')} days remaining)
+- Target Subject / Course: {subject}
+{deadline_header}
 - Total Study Budget: {summary.get('total_study_hours')} hours across {summary.get('total_days')} days
 - Daily Commitment: {daily_hours} hours/day
 - Student Knowledge Level: {current_level}
 - Learning Style: {learning_style}
-- Specific Student Focus: {specific_goals.strip() if specific_goals.strip() else 'None specified'}
-- Emergency Mode Active: {'YES 🚨 (CRUNCH MODE)' if is_emergency else 'NO (Standard Pace)'}
+- Specific Student Focus: {specific_goals.strip() if specific_goals.strip() else 'Comprehensive syllabus coverage'}
 
-📅 EXACT CALENDAR DAYS TO SCHEDULE (DO NOT GO PAST {summary.get('exam_date')}):
+📅 EXACT CALENDAR DAYS TO SCHEDULE:
 {cal_hints}
 
 {syllabus_context}
 
 Please generate:
-1. 🎯 Top Priority Summary (High / Medium / Low priority breakdown based on the syllabus)
+1. 🎯 Curriculum Overview & Priority Breakdown
 2. Day-by-Day Roadmap using the strict DAY [X] format for every single day listed above.
-3. Rapid Revision Checkpoints for the final days before the exam.
+3. Summary of Key Milestones & Review Strategy.
 """
 
     # 4. Initialize client and execute with model fallback
-    # gemini-3-flash-preview is placed first to avoid 429 quota exhaustion on older models
+    # gemini-3-flash-preview prioritized for speed and quota
     client = get_gemini_client()
     models_to_try = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
     last_error: Optional[Exception] = None
@@ -177,6 +188,7 @@ Please generate:
                     "plan_markdown": response.text,
                     "schedule_data": schedule_data,
                     "is_emergency": is_emergency,
+                    "has_deadline": has_deadline,
                     "has_syllabus": has_syllabus
                 }
         except Exception as e:
@@ -191,24 +203,19 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
 
-    print("--- Running Agent Test with Syllabus & Exam Deadline ---")
-    sample_syllabus = """
-    Unit 1: Fundamentals of Python (Variables, Data Types, Conditionals)
-    Unit 2: Data Structures (Lists, Dictionaries, Tuples, Sets)
-    Unit 3: Object-Oriented Programming (Classes, Objects, Inheritance)
-    Unit 4: File Handling and Exception Handling
-    """
+    print("--- Running Agent Test with Optional (No) Exam Deadline ---")
     try:
         res = generate_study_plan(
-            subject="Python Exam",
-            total_days=3,
-            daily_hours=2.0,
+            subject="Python Essentials",
+            total_days=5,
+            daily_hours=1.5,
             current_level="Beginner",
-            exam_date_str="2026-10-31",
-            syllabus_text=sample_syllabus,
-            syllabus_filename="syllabus_unit1_4.txt"
+            exam_date_str=None,  # No exam date
+            syllabus_text="Unit 1: Syntax & Variables\nUnit 2: Conditionals & Loops"
         )
-        print("Success! Is emergency:", res["is_emergency"])
-        print("Plan Preview:\n", res["plan_markdown"][:600])
+        print("Success!")
+        print("Has deadline:", res["has_deadline"])
+        print("Is emergency:", res["is_emergency"])
+        print("Plan Preview:\n", res["plan_markdown"][:300])
     except Exception as e:
         print("Test Error:", e)
