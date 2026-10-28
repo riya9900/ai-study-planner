@@ -175,3 +175,4 @@ else:
         2. **Agent Reasoning:** The AI Agent uses scheduling tools to divide the curriculum.
         3. **Structured Plan:** Receive an actionable, day-by-day roadmap.
         """)
+
