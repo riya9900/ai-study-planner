@@ -1,5 +1,6 @@
 import streamlit as st
 import datetime
+from agent import generate_study_plan
 
 # ---------------------------------------------------------
 # Page Configuration
@@ -17,7 +18,7 @@ st.set_page_config(
 st.markdown("""
     <style>
         .main-header {
-            font-size: 2.3rem;
+            font-size: 2.2rem;
             font-weight: 700;
             color: #1E3A8A;
             margin-bottom: 0.2rem;
@@ -25,18 +26,28 @@ st.markdown("""
         .sub-header {
             font-size: 1.05rem;
             color: #4B5563;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.2rem;
         }
-        .card {
+        .stat-box {
             background-color: #F8FAFC;
-            border-radius: 10px;
-            padding: 1.2rem;
+            border-radius: 8px;
+            padding: 1rem;
             border: 1px solid #E2E8F0;
-            margin-bottom: 1rem;
+            text-align: center;
         }
-        .highlight {
-            color: #2563EB;
-            font-weight: 600;
+        .milestone-card {
+            background-color: #EFF6FF;
+            border-left: 4px solid #3B82F6;
+            padding: 0.9rem;
+            border-radius: 6px;
+            margin-bottom: 0.75rem;
+        }
+        .phase-card {
+            background-color: #F9FAFB;
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -46,7 +57,7 @@ st.markdown("""
 # ---------------------------------------------------------
 st.markdown('<div class="main-header">📚 AI Study Planner Agent</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-header">Create a realistic, customized study curriculum powered by AI reasoning and scheduling tools.</div>',
+    '<div class="sub-header">Personalized, realistic study curriculum powered by AI reasoning and intelligent scheduling tools.</div>',
     unsafe_allow_html=True
 )
 
@@ -54,18 +65,20 @@ st.markdown(
 # Sidebar: User Inputs
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("🎯 Your Study Goals")
+    st.header("🎯 Study Parameters")
     
     subject = st.text_input(
         "Subject / Topic or Exam",
-        placeholder="e.g., Python for Beginners, AWS Cloud Practitioner, Calculus I",
-        help="What do you want to learn or prepare for?"
+        value=st.session_state.get("prev_subject", ""),
+        placeholder="e.g., Python for Data Science, AWS Cloud Practitioner, Calculus II",
+        help="What specific subject, exam, or skill are you studying for?"
     )
     
     current_level = st.selectbox(
         "Current Knowledge Level",
         ["Complete Beginner", "Some Basics / Intermediate", "Advanced (Revision & Practice)"],
-        index=0
+        index=0,
+        help="Select your starting experience level so the agent calibrates topic difficulty."
     )
     
     col_days, col_hours = st.columns(2)
@@ -76,7 +89,7 @@ with st.sidebar:
             max_value=365,
             value=30,
             step=1,
-            help="Total number of days until your exam or goal"
+            help="Total days until your target completion date or exam"
         )
     with col_hours:
         daily_hours = st.number_input(
@@ -85,7 +98,7 @@ with st.sidebar:
             max_value=12.0,
             value=2.0,
             step=0.5,
-            help="How many hours can you commit each day?"
+            help="Number of hours you can realistically study each day"
         )
         
     learning_style = st.selectbox(
@@ -95,84 +108,151 @@ with st.sidebar:
             "Theory & Deep Concept Building",
             "Balanced (Theory + Practice + Quizzes)"
         ],
-        index=2
+        index=2,
+        help="How do you learn best?"
     )
     
     specific_goals = st.text_area(
-        "Specific Topics or Focus Areas (Optional)",
-        placeholder="e.g., Focus on OOP and data structures, skip setup basics.",
-        help="Any topics you struggle with or want to prioritize?"
+        "Focus Areas or Weaknesses (Optional)",
+        placeholder="e.g., Prioritize recursion and dynamic programming; skip environment installation.",
+        help="Mention any specific chapters, topics, or pain points to customize your curriculum."
     )
     
     generate_btn = st.button("🚀 Generate Study Plan", type="primary", use_container_width=True)
 
 # ---------------------------------------------------------
-# Main Page: Results & Preview
+# Session State: Ensure generated plans persist across clicks
 # ---------------------------------------------------------
+if "study_plan_result" not in st.session_state:
+    st.session_state["study_plan_result"] = None
+
+# Handle Plan Generation
 if generate_btn:
     if not subject.strip():
-        st.warning("⚠️ Please enter a Subject or Exam name in the sidebar to begin!")
+        st.warning("⚠️ Please provide a **Subject / Topic or Exam** in the sidebar to generate your plan.")
     else:
-        # Temporary UI confirmation for Step 2
-        st.success(f"🎯 Inputs received! Ready to build plan for: **{subject}**")
+        st.session_state["prev_subject"] = subject
+        with st.spinner("🤖 **Agent at work**: Calling scheduling tools, calculating milestone dates, and creating your plan..."):
+            try:
+                result = generate_study_plan(
+                    subject=subject.strip(),
+                    total_days=int(total_days),
+                    daily_hours=float(daily_hours),
+                    current_level=current_level,
+                    learning_style=learning_style,
+                    specific_goals=specific_goals.strip()
+                )
+                st.session_state["study_plan_result"] = result
+                st.success("✅ Personalized Study Plan generated successfully!")
+            except Exception as e:
+                st.error(f"❌ Failed to generate study plan: {e}")
+                st.info("💡 **Troubleshooting Tip**: Verify your `GEMINI_API_KEY` is properly configured in `.env`.")
+
+# ---------------------------------------------------------
+# Display Results (if plan exists in session state)
+# ---------------------------------------------------------
+plan_result = st.session_state.get("study_plan_result")
+
+if plan_result:
+    schedule_data = plan_result.get("schedule_data", {})
+    summary = schedule_data.get("summary", {})
+    plan_markdown = plan_result.get("plan_markdown", "")
+    
+    # 1. Metric Summary Cards
+    st.subheader(f"📋 Study Roadmap: {subject.strip()}")
+    
+    m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+    with m_col1:
+        st.metric("Total Duration", f"{summary.get('total_days', total_days)} Days")
+    with m_col2:
+        st.metric("Active Study Days", f"{summary.get('active_study_days', '-')} Days")
+    with m_col3:
+        st.metric("Buffer / Rest Days", f"{summary.get('buffer_days', '-')} Days")
+    with m_col4:
+        st.metric("Total Study Budget", f"{summary.get('total_study_hours', '-')} Hours")
+    with m_col5:
+        st.metric("Daily Pace", f"{summary.get('daily_hours', daily_hours)} hrs/day")
         
-        # Stat cards showing quick summary of study parameters
-        total_study_hours = total_days * daily_hours
+    st.divider()
+    
+    # 2. Main Content Tabs
+    tab_plan, tab_timeline, tab_pomodoro = st.tabs([
+        "📖 Complete Curriculum",
+        "🏁 Milestone & Phase Timeline",
+        "⏱️ Daily Pace & Pomodoro"
+    ])
+    
+    # Tab 1: AI Agent Generated Plan (Markdown)
+    with tab_plan:
+        st.markdown(plan_markdown)
         
-        stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-        with stat_col1:
-            st.metric("Total Duration", f"{total_days} Days")
-        with stat_col2:
-            st.metric("Daily Commitment", f"{daily_hours} hrs/day")
-        with stat_col3:
-            st.metric("Total Study Budget", f"{total_study_hours:.0f} Hours")
-        with stat_col4:
-            st.metric("Level", current_level.split()[0])
-            
-        st.divider()
+        # Download Button
+        clean_filename = f"study_plan_{subject.strip().lower().replace(' ', '_')}.md"
+        st.download_button(
+            label="📥 Download Study Plan as Markdown (.md)",
+            data=plan_markdown,
+            file_name=clean_filename,
+            mime="text/markdown",
+            use_container_width=True
+        )
         
-        # Tabs for previewing how the final plan will be presented
-        tab_plan, tab_milestones, tab_tips = st.tabs(["📅 Study Schedule", "🏁 Milestone Timeline", "💡 Study Strategies"])
+    # Tab 2: Structured Milestone and Phase Timeline
+    with tab_timeline:
+        st.markdown("### 🎯 Key Milestone Deadlines")
+        st.caption("Calculated by the Agent Tool using precise calendar offsets.")
         
-        with tab_plan:
-            st.info("🤖 **Step 2 UI Preview**: In Step 3 & 4, the AI Agent will populate your comprehensive weekly breakdown here.")
+        milestones = schedule_data.get("milestones", [])
+        for m in milestones:
             st.markdown(f"""
-            ### Sample Plan Preview for *{subject}*
-            - **Phase 1: Foundations** (~{int(total_days * 0.4)} days)
-            - **Phase 2: Core Mastery & Problem Solving** (~{int(total_days * 0.4)} days)
-            - **Phase 3: Review, Practice Tests & Buffer** (~{int(total_days * 0.2)} days)
-            """)
+            <div class="milestone-card">
+                <strong>🗓️ {m.get('date')}</strong> — {m.get('milestone')}
+            </div>
+            """, unsafe_allow_html=True)
             
-        with tab_milestones:
-            st.markdown("### 🎯 Key Milestone Deadlines")
-            st.write(f"- **Day 1**: Orientation & foundational principles.")
-            st.write(f"- **Day {int(total_days * 0.5)}**: Mid-point assessment and mini-project.")
-            st.write(f"- **Day {int(total_days * 0.85)}**: Final mock exam and review.")
-            st.write(f"- **Day {total_days}**: Goal Completion!")
+        st.markdown("### 📊 Phase Distribution Breakdown")
+        phases = schedule_data.get("phases", [])
+        for phase in phases:
+            st.markdown(f"""
+            <div class="phase-card">
+                <h4>{phase.get('name')}</h4>
+                <p><strong>Timeline:</strong> {phase.get('start_date')} to {phase.get('target_date')} ({phase.get('days')} days)</p>
+                <p><strong>Hours Allocated:</strong> {phase.get('allocated_hours')} study hours</p>
+            </div>
+            """, unsafe_allow_html=True)
             
-        with tab_tips:
-            st.markdown("### 🧠 Agent Recommendations")
-            st.write(f"- Tailored for **{learning_style}**.")
-            st.write(f"- Break your {daily_hours} daily hours into 25-minute Pomodoro sessions.")
-            st.write("- Allocate 1 day each week as a buffer catch-up day.")
+    # Tab 3: Daily Pace & Productivity Tips
+    with tab_pomodoro:
+        st.markdown("### ⏱️ Recommended Daily Study Rhythm")
+        pomodoro_count = summary.get("daily_pomodoro_sessions", 4)
+        
+        st.write(f"- **Recommended Daily Sessions:** {pomodoro_count} $\\times$ 25-minute Pomodoro focus blocks.")
+        st.write(f"- **Daily Rest Budget:** Take 5 minutes after each block, with a longer 20-minute break after every 4 blocks.")
+        st.write(f"- **Buffer Days:** You have **{summary.get('buffer_days', 1)} reserved buffer days** throughout this schedule to catch up or take restful breaks.")
+        
+        st.markdown("### 🧠 Retention Strategies")
+        st.markdown("""
+        1. **Active Recall:** Close your notes and write down key concepts from memory before re-reading.
+        2. **Spaced Repetition:** Revisit previous topics at the start of each new phase.
+        3. **Feynman Technique:** Explain complex concepts in plain language as if teaching a beginner.
+        """)
 
 else:
-    # Default Welcome Screen before clicking Generate
-    st.info("👈 **Get Started**: Fill in your study goals in the sidebar and click **'Generate Study Plan'**.")
+    # Initial Empty State / Welcome Screen
+    st.info("👈 **Ready to begin?** Enter your study goal in the sidebar and click **'Generate Study Plan'**.")
     
-    col_info1, col_info2 = st.columns(2)
-    with col_info1:
+    col_feature1, col_feature2, col_feature3 = st.columns(3)
+    with col_feature1:
         st.markdown("""
-        ### Why Use the AI Study Planner?
-        - **Realistic Pacing:** Calculates exact hours so you never burn out.
-        - **Built-in Buffer Days:** Protects your schedule against unexpected delays.
-        - **Tailored to You:** Adjusts depth based on your starting skill level.
+        #### 🤖 AI-Powered Agent
+        Crafts personalized curricula matching your exact skill level, learning style, and target deadlines.
         """)
-    with col_info2:
+    with col_feature2:
         st.markdown("""
-        ### How It Works
-        1. **Input Your Target:** Share the topic, timeline, and available hours.
-        2. **Agent Reasoning:** The AI Agent uses scheduling tools to divide the curriculum.
-        3. **Structured Plan:** Receive an actionable, day-by-day roadmap.
+        #### 🧮 Built-in Scheduling Tools
+        Accurately calculates study hours, phases, and reserves buffer days to protect you from burnout.
         """)
-
+    with col_feature3:
+        st.markdown("""
+        #### 📥 Download & Track
+        Export your complete curriculum as a Markdown document ready for Notion, Obsidian, or printing.
+        """)
