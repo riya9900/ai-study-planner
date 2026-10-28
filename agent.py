@@ -6,27 +6,60 @@ from google.genai import types
 
 from tools import calculate_study_schedule
 
-# Load environment variables from .env file
+# Load environment variables securely from .env
 load_dotenv()
 
 SYSTEM_INSTRUCTION = """
 You are an expert AI Study Planner Agent and academic coach.
-Your mission is to craft realistic, highly actionable, and motivating study plans for students and professionals.
+Your mission is to craft realistic, deadline-driven, highly actionable, and easy-to-read study plans.
 
-When given a student's study request:
-1. Always call the `calculate_study_schedule` tool first to compute the exact hour allocation, phase distribution, buffer days, and milestone dates.
-2. Use the mathematical parameters returned by the tool to anchor your curriculum — do NOT invent conflicting dates or hour totals.
-3. Structure your response cleanly using GitHub-flavored Markdown with the following sections:
-   - 📊 **Executive Overview**: Total hours, active days, buffer days, and key milestone completion dates.
-   - 🗺️ **Phase-by-Phase Roadmap**: For each phase, provide a clear breakdown of topics, practical exercises, and checkpoints.
-   - 🎯 **Tailored Focus & Practice Strategy**: Specific tips based on the user's preferred learning style and weak areas.
-   - ⏱️ **Daily Routine & Pomodoro Guide**: How to structure daily study blocks and use buffer days effectively without burnout.
+### CORE OPERATING RULES:
+1. **Syllabus Grounding**:
+   - If a syllabus is provided: You MUST treat it as the absolute primary authority. Extract the actual units, modules, and topics directly from it. Do NOT replace them with generic topics.
+   - If NO syllabus is provided: Clearly note that you are designing a standardized curriculum based on the requested subject.
+   - NEVER pretend you read a syllabus if none was provided.
 
-Maintain an encouraging, practical, and structured tone.
+2. **Exam-Based Priority**:
+   - Tag topics with clear priority markers:
+     - 🔥 HIGH PRIORITY: Core, foundational, and high-frequency exam topics.
+     - ⚡ MEDIUM PRIORITY: Supporting topics and secondary modules.
+     - 💡 LOW PRIORITY: Nuances or lower-yield topics.
+   - NEVER drop syllabus topics silently. Clearly explain which topics are prioritized due to the available time budget.
+
+3. **Deadline Adherence & Calendar Alignment**:
+   - Study time must strictly stop on or before the exam date.
+   - NEVER schedule study after the exam date.
+   - Use the exact dates and day numbers provided by the schedule calculator.
+
+4. **Emergency Countdown Mode (When 3 or fewer days remain)**:
+   - Immediately switch to "🚨 Exam Countdown Mode".
+   - Eliminate non-essential background reading.
+   - Deliver high-yield formula sheets, key definitions, rapid-fire MCQs, and full-syllabus revision.
+
+5. **Beginner-Friendly, Highly Structured Formatting**:
+   For every study day, you MUST use the following exact visual template:
+
+   ### 📍 DAY [X] — [Day Focus Title]
+   - **📅 Date:** [e.g. 28 Oct]
+   - **⏰ Study time:** [e.g. 2 hours]
+   - **Priority:** [🔥 High / ⚡ Medium / 💡 Low]
+
+   📖 **Learn:**
+   • **[Topic 1]**: [Clear, simple 1-2 sentence explanation suitable for a beginner]
+   • **[Topic 2]**: [Clear, simple 1-2 sentence explanation suitable for a beginner]
+
+   📝 **Practice:**
+   • [e.g. Solve 5 MCQs on Topic 1]
+   • [e.g. Write down the definition of Concept 2 from memory]
+
+   🎯 **Today's Goal:**
+   [One crisp sentence summarizing what the student should understand before going to sleep]
+
+Keep your tone motivating, straightforward, and practical.
 """
 
 def get_gemini_client() -> genai.Client:
-    """Initializes and returns a Google GenAI client using the GEMINI_API_KEY from environment variables."""
+    """Initializes and returns a Google GenAI client using GEMINI_API_KEY from environment variables."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
         raise ValueError(
@@ -42,95 +75,139 @@ def generate_study_plan(
     daily_hours: float,
     current_level: str = "Beginner",
     learning_style: str = "Balanced",
-    specific_goals: str = ""
+    specific_goals: str = "",
+    exam_date_str: Optional[str] = None,
+    syllabus_text: str = "",
+    syllabus_filename: str = ""
 ) -> Dict[str, Any]:
-    """Generates a complete study plan using the AI Agent and the calculate_study_schedule tool.
+    """Generates a complete study plan grounded in the uploaded syllabus and exam deadline.
 
     Args:
-        subject: The subject, exam, or topic to learn.
-        total_days: Total days available.
-        daily_hours: Hours committed per day.
-        current_level: Current knowledge level.
-        learning_style: Preferred learning format.
-        specific_goals: Optional specific focus areas or weaknesses.
+        subject: The subject or exam title.
+        total_days: Total days available until the exam.
+        daily_hours: Dedicated hours per day.
+        current_level: Experience level.
+        learning_style: Preferred learning approach.
+        specific_goals: Optional extra focus areas.
+        exam_date_str: ISO string of exam date ('YYYY-MM-DD').
+        syllabus_text: Extracted text from uploaded syllabus document.
+        syllabus_filename: Name of the uploaded syllabus file.
 
     Returns:
-        A dictionary containing:
-        - 'plan_markdown': The complete markdown response from the AI Agent.
-        - 'schedule_data': The raw structured data from calculate_study_schedule.
+        Dict with 'plan_markdown', 'schedule_data', and 'is_emergency'.
     """
-    # 1. Run the deterministic tool first to get accurate schedule numbers for the UI
+    # 1. Run deterministic schedule calculation
     schedule_data = calculate_study_schedule(
         total_days=total_days,
         daily_hours=daily_hours,
-        current_level=current_level
+        current_level=current_level,
+        exam_date_str=exam_date_str
     )
 
-    # 2. Initialize the Gemini Client securely
-    client = get_gemini_client()
+    summary = schedule_data["summary"]
+    is_emergency = summary["is_emergency"]
+    daily_cal = schedule_data.get("daily_calendar", [])
 
-    # 3. Formulate the user prompt with all inputs
-    user_prompt = f"""
-I need a personalized study plan with the following requirements:
-- Subject/Goal: {subject}
-- Total Days Available: {total_days} days
-- Daily Time Commitment: {daily_hours} hours/day
-- Current Skill Level: {current_level}
-- Learning Style Preference: {learning_style}
-- Specific Topics / Focus Areas: {specific_goals if specific_goals.strip() else 'Comprehensive coverage of standard syllabus'}
+    # Format calendar hints for the model
+    cal_hints = "\n".join([
+        f"- Day {d['day_number']} ({d['formatted_date']}): {d['hours']} hrs allocated "
+        f"{'[BUFFER/REST]' if d['is_buffer'] else ''} "
+        f"{'[EXAM DAY]' if d['is_exam_day'] else ''}"
+        for d in daily_cal
+    ])
 
-Please call calculate_study_schedule to calculate the phase breakdown, buffer days, and milestone dates, and then generate the complete, detailed study curriculum.
+    # 2. Build syllabus context prompt
+    has_syllabus = bool(syllabus_text and syllabus_text.strip())
+    if has_syllabus:
+        syllabus_context = f"""
+SOURCE DOCUMENT: Uploaded Syllabus File '{syllabus_filename}'
+------------------------------------------------------------
+{syllabus_text[:12000]}
+------------------------------------------------------------
+CRITICAL INSTRUCTION: Build the plan directly around the units, chapters, and topics in this document.
+"""
+    else:
+        syllabus_context = """
+NOTE: No syllabus file was uploaded. Use standard core curriculum for the requested subject.
 """
 
-    # 4. Attempt generation with model fallback for high availability
+    # 3. Assemble User Prompt
+    user_prompt = f"""
+Create a comprehensive study roadmap with the following exact constraints:
+
+📌 STUDENT PROFILE & TIMELINE:
+- Target Subject / Exam: {subject}
+- Exam Deadline: {summary.get('exam_date')} ({summary.get('days_left')} days remaining)
+- Total Study Budget: {summary.get('total_study_hours')} hours across {summary.get('total_days')} days
+- Daily Commitment: {daily_hours} hours/day
+- Student Knowledge Level: {current_level}
+- Learning Style: {learning_style}
+- Specific Student Focus: {specific_goals.strip() if specific_goals.strip() else 'None specified'}
+- Emergency Mode Active: {'YES 🚨 (CRUNCH MODE)' if is_emergency else 'NO (Standard Pace)'}
+
+📅 EXACT CALENDAR DAYS TO SCHEDULE (DO NOT GO PAST {summary.get('exam_date')}):
+{cal_hints}
+
+{syllabus_context}
+
+Please generate:
+1. 🎯 Top Priority Summary (High / Medium / Low priority breakdown based on the syllabus)
+2. Day-by-Day Roadmap using the strict DAY [X] format for every single day listed above.
+3. Rapid Revision Checkpoints for the final days before the exam.
+"""
+
+    # 4. Initialize client and execute with model fallback
+    client = get_gemini_client()
     models_to_try = ["gemini-2.5-flash", "gemini-flash-latest"]
     last_error: Optional[Exception] = None
 
     for model_name in models_to_try:
         try:
-            # We create a chat session with Automatic Function Calling (AFC) enabled
             chat = client.chats.create(
                 model=model_name,
                 config=types.GenerateContentConfig(
-                    tools=[calculate_study_schedule],
                     system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.7,
+                    temperature=0.6,
                 )
             )
             response = chat.send_message(user_prompt)
-            
             if response and response.text:
                 return {
                     "plan_markdown": response.text,
-                    "schedule_data": schedule_data
+                    "schedule_data": schedule_data,
+                    "is_emergency": is_emergency,
+                    "has_syllabus": has_syllabus
                 }
         except Exception as e:
             last_error = e
             continue
 
-    # If all models failed, raise the last recorded error
-    raise RuntimeError(f"Failed to generate study plan with Gemini Agent: {last_error}")
+    raise RuntimeError(f"Agent failed to generate plan: {last_error}")
 
 
 if __name__ == "__main__":
-    # Standalone self-test for the agent
     import sys
-    # Ensure Windows console handles UTF-8 emojis smoothly
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
 
-    print("--- Running Agent Self-Test ---")
+    print("--- Running Agent Test with Syllabus & Exam Deadline ---")
+    sample_syllabus = """
+    Unit 1: Fundamentals of Python (Variables, Data Types, Conditionals)
+    Unit 2: Data Structures (Lists, Dictionaries, Tuples, Sets)
+    Unit 3: Object-Oriented Programming (Classes, Objects, Inheritance)
+    Unit 4: File Handling and Exception Handling
+    """
     try:
-        result = generate_study_plan(
-            subject="Git and GitHub Mastery",
-            total_days=7,
-            daily_hours=1.5,
+        res = generate_study_plan(
+            subject="Python Exam",
+            total_days=3,
+            daily_hours=2.0,
             current_level="Beginner",
-            learning_style="Hands-on / Practical & Projects",
-            specific_goals="Branching, merge conflicts, pull requests"
+            exam_date_str="2026-10-31",
+            syllabus_text=sample_syllabus,
+            syllabus_filename="syllabus_unit1_4.txt"
         )
-        print("\n[SUCCESS] Plan Generated! Output Preview:\n")
-        print(result["plan_markdown"][:600])
-        print("\n... [Output truncated for preview]")
-    except Exception as err:
-        print(f"\n[ERROR] Test failed: {err}")
+        print("Success! Is emergency:", res["is_emergency"])
+        print("Plan Preview:\n", res["plan_markdown"][:600])
+    except Exception as e:
+        print("Test Error:", e)
