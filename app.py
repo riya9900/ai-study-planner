@@ -107,12 +107,13 @@ st.markdown("""
         .badge-success {
             background-color: #064E3B;
             color: #6EE7B7;
-            padding: 0.35rem 0.6rem;
+            padding: 0.4rem 0.65rem;
             border-radius: 6px;
             font-size: 0.85rem;
             border: 1px solid #059669;
-            display: inline-block;
-            margin-top: 0.3rem;
+            display: block;
+            margin-top: 0.4rem;
+            line-height: 1.4;
         }
         
         .badge-emergency {
@@ -147,30 +148,32 @@ with st.sidebar:
     subject = st.text_input(
         "Subject / Topic or Exam Name",
         value=st.session_state.get("prev_subject", ""),
-        placeholder="e.g., Python Programming, Operating Systems, AWS Cloud",
-        help="What subject or exam are you preparing for?"
+        placeholder="e.g., Operating Systems, Python, AWS Cloud",
+        help="What subject or exam are you preparing for? (If left blank with a syllabus uploaded, it will be detected automatically)."
     )
 
-    # 2. Syllabus File Upload Section
+    # 2. Robust Syllabus File Upload (Supports digital & scanned documents)
     st.markdown("### 📚 Upload Your Syllabus")
     uploaded_file = st.file_uploader(
-        "Upload Syllabus (PDF, PPTX, DOCX, TXT)",
-        type=["pdf", "pptx", "ppt", "docx", "doc", "txt"],
-        help="Upload your university syllabus or lecture slides. The AI will extract actual units and topics."
+        "Upload Syllabus (PDF, PPTX, DOCX, TXT, Images)",
+        type=["pdf", "pptx", "ppt", "docx", "doc", "txt", "png", "jpg", "jpeg"],
+        help="Upload lecture slides, syllabus PDFs (digital or scanned), Word documents, or photos. Both text and scanned PDFs are supported automatically."
     )
 
     syllabus_text = ""
     syllabus_meta = None
 
     if uploaded_file is not None:
-        with st.spinner("Extracting syllabus content..."):
+        with st.spinner("Processing syllabus (running digital extraction / AI OCR fallback)..."):
             extracted_txt, meta = extract_text_from_upload(uploaded_file)
             if meta["status"] == "success":
                 syllabus_text = extracted_txt
                 syllabus_meta = meta
+                
+                method_label = "AI Vision OCR" if "ocr" in meta["extraction_method"] else "Digital Text"
                 st.markdown(
-                    f'<div class="badge-success">✅ Syllabus ready: {meta["filename"]} '
-                    f'({meta["page_or_slide_count"]} items, {meta["word_count"]} words)</div>',
+                    f'<div class="badge-success">✅ <strong>Syllabus ready</strong>: {meta["filename"]}<br>'
+                    f'Method: {method_label} | Words: {meta["word_count"]}</div>',
                     unsafe_allow_html=True
                 )
             else:
@@ -212,7 +215,7 @@ with st.sidebar:
             "Daily Hours",
             min_value=0.5,
             max_value=14.0,
-            value=2.5 if is_emergency else 2.0,
+            value=3.0 if is_emergency else 2.0,
             step=0.5,
             help="How many hours can you study each day?"
         )
@@ -237,7 +240,7 @@ with st.sidebar:
     # 6. Specific Focus or Weaknesses
     specific_goals = st.text_area(
         "Priority Topics / Weaknesses (Optional)",
-        placeholder="e.g., Focus heavily on Unit 3; skip basic installation.",
+        placeholder="e.g., Focus heavily on Deadlocks & CPU Scheduling; skip basic history.",
         help="Any topics you find especially difficult or want to prioritize?"
     )
 
@@ -252,9 +255,18 @@ if "study_plan_result" not in st.session_state:
 # Handle Plan Generation
 if generate_btn:
     effective_subject = subject.strip()
-    if not effective_subject and syllabus_meta:
-        # Auto-derive subject from syllabus filename if omitted
-        effective_subject = syllabus_meta["filename"].rsplit(".", 1)[0].replace("_", " ").title()
+    
+    # Auto-detect subject if user left it blank
+    if not effective_subject and syllabus_text:
+        # Check if course title is in extracted text
+        for line in syllabus_text.splitlines()[:15]:
+            if any(k in line.lower() for k in ["course title:", "subject:", "course name:", "course:"]):
+                candidate = line.split(":", 1)[-1].strip()
+                if candidate:
+                    effective_subject = candidate
+                    break
+        if not effective_subject and syllabus_meta:
+            effective_subject = syllabus_meta["filename"].rsplit(".", 1)[0].replace("_", " ").title()
 
     if not effective_subject:
         st.warning("⚠️ Please provide a **Subject / Exam Name** or upload a syllabus file to begin.")
@@ -446,30 +458,36 @@ if plan_result:
     with tab_source:
         st.markdown("### 📚 Syllabus Source & Processing")
         if has_syl and syllabus_meta:
+            method_desc = (
+                "🤖 AI Vision Multimodal OCR (Scanned / Image Document)"
+                if "ocr" in syllabus_meta.get("extraction_method", "") else
+                "📄 Direct Digital Text Extraction"
+            )
             st.markdown(f"""
             <div class="dark-card">
                 <h4>📄 File: {syllabus_meta.get('filename')}</h4>
+                <p><strong>Extraction Method:</strong> <span style="color: #38BDF8;">{method_desc}</span></p>
                 <p><strong>Type:</strong> {syllabus_meta.get('extension').upper()} &nbsp;|&nbsp; 
-                   <strong>Items (Pages/Slides):</strong> {syllabus_meta.get('page_or_slide_count')} &nbsp;|&nbsp; 
+                   <strong>Items:</strong> {syllabus_meta.get('page_or_slide_count')} &nbsp;|&nbsp; 
                    <strong>Extracted Words:</strong> {syllabus_meta.get('word_count')}</p>
-                <p style="color: #6EE7B7;">✅ The AI Agent strictly used this document as the primary syllabus foundation.</p>
+                <p style="color: #6EE7B7;">✅ The AI Agent strictly grounded the study roadmap in the extracted syllabus topics.</p>
             </div>
             """, unsafe_allow_html=True)
             with st.expander("🔍 View Extracted Syllabus Text"):
-                st.text(syllabus_text[:5000] + ("\n... [Truncated for preview]" if len(syllabus_text) > 5000 else ""))
+                st.text(syllabus_text[:6000] + ("\n... [Truncated for preview]" if len(syllabus_text) > 6000 else ""))
         else:
             st.info("ℹ️ No external syllabus file was uploaded. The plan was constructed using standard subject curriculum.")
 
 else:
     # Initial Empty State / Welcome Screen
-    st.info("👈 **To get started:** Enter your exam date and subject in the sidebar, or upload your syllabus, then click **'Generate Study Plan'**.")
+    st.info("👈 **To get started:** Upload your syllabus (digital or scanned) or enter your subject in the sidebar, set your exam date, and click **'Generate Study Plan'**.")
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("""
         <div class="dark-card">
-            <h4 style="color: #38BDF8;">📚 Real Syllabus Grounding</h4>
-            <p>Upload lecture slides (PPTX), PDF syllabi, or Word documents. The agent directly extracts actual units and topics instead of inventing generic curricula.</p>
+            <h4 style="color: #38BDF8;">📚 Digital & Scanned PDF OCR</h4>
+            <p>Upload digital PDFs, lecture slides (PPTX), or scanned/image-based documents. AI OCR automatically extracts actual units and topics.</p>
         </div>
         """, unsafe_allow_html=True)
     with col2:

@@ -37,6 +37,10 @@ wheels/
 *.swp
 *.swo
 
+# User testing uploads
+Doc1.pdf
+*.pdf
+
 # OS files
 .DS_Store
 Thumbs.db
