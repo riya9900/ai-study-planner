@@ -106,3 +106,4 @@ if __name__ == "__main__":
     sample_result = calculate_study_schedule(total_days=30, daily_hours=2.0, current_level="Beginner")
     print("--- Tool Self-Test Result ---")
     print(json.dumps(sample_result, indent=2))
+
