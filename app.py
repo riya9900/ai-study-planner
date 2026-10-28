@@ -1,7 +1,5 @@
 import streamlit as st
 import datetime
-import pandas as pd
-import altair as alt
 
 from agent import generate_study_plan
 from syllabus_parser import extract_text_from_upload
@@ -74,6 +72,17 @@ st.markdown("""
             color: #94A3B8 !important;
             font-size: 0.95rem;
             margin: 0.2rem 0;
+        }
+        
+        /* Visual Timeline Progress Bar */
+        .timeline-bar-container {
+            display: flex;
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            background-color: #0F172A;
+            border: 1px solid #334155;
+            margin: 1rem 0 1.5rem 0;
         }
         
         /* Countdown Banners */
@@ -350,43 +359,50 @@ if plan_result:
             use_container_width=True
         )
 
-    # TAB 2: Phase Distribution Breakdown & Dark-Themed Altair Chart
+    # TAB 2: Phase Distribution Breakdown (Pure CSS/HTML, zero pandas/altair)
     with tab_timeline:
         st.markdown("### 📊 Phase Distribution Breakdown")
         phases = schedule_data.get("phases", [])
         
         if phases:
-            # Build Dark-Themed Horizontal Bar Chart (No blank/white box!)
-            chart_data = pd.DataFrame([
-                {
-                    "Phase": f"Phase {p['phase_number']}",
-                    "Phase Name": p["name"],
-                    "Days": p["days"],
-                    "Hours": p["allocated_hours"]
-                }
-                for p in phases
-            ])
+            total_phase_days = sum(p.get("days", 1) for p in phases) or 1
+            phase_colors = ["#38BDF8", "#818CF8", "#F43F5E"]
 
-            phase_chart = alt.Chart(chart_data).mark_bar(cornerRadius=6).encode(
-                y=alt.Y("Phase:N", title="", sort=None, axis=alt.Axis(labelColor="#F8FAFC", labelFontSize=12)),
-                x=alt.X("Days:Q", title="Allocated Days", axis=alt.Axis(gridColor="#334155", labelColor="#94A3B8", titleColor="#E2E8F0")),
-                color=alt.Color("Phase:N", scale=alt.Scale(range=["#38BDF8", "#818CF8", "#F43F5E"]), legend=None),
-                tooltip=["Phase Name", "Days", "Hours"]
-            ).properties(
-                height=160
-            ).configure_view(
-                strokeOpacity=0
-            ).configure_axis(
-                domainColor="#334155"
-            )
+            # Visual Multi-Segment Timeline Bar
+            segments_html = []
+            for i, p in enumerate(phases):
+                color = phase_colors[i % len(phase_colors)]
+                p_days = p.get("days", 1)
+                p_name = p.get("name", f"Phase {i+1}")
+                p_pct = round((p_days / total_phase_days) * 100, 1)
+                segments_html.append(
+                    f'<div style="width: {p_pct}%; background-color: {color};" '
+                    f'title="{p_name}: {p_days} days ({p_pct}%)"></div>'
+                )
 
-            st.altair_chart(phase_chart, use_container_width=True)
+            st.markdown(f"""
+            <div class="timeline-bar-container">
+                {''.join(segments_html)}
+            </div>
+            """, unsafe_allow_html=True)
 
-            # Render Dark Phase Cards
-            for p in phases:
+            # Render Dark Phase Cards with Individual Progress Bars
+            for i, p in enumerate(phases):
+                color = phase_colors[i % len(phase_colors)]
+                p_days = p.get("days", 1)
+                p_pct = round((p_days / total_phase_days) * 100, 1)
+                
                 st.markdown(f"""
                 <div class="phase-dark-card">
-                    <div class="phase-title">{p.get('name')}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                        <span class="phase-title">{p.get('name')}</span>
+                        <span style="background: #0F172A; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; border: 1px solid #334155; color: {color}; font-weight: 600;">
+                            {p_pct}% of timeline ({p_days} days)
+                        </span>
+                    </div>
+                    <div style="background: #0F172A; border-radius: 4px; height: 7px; margin: 0.4rem 0 0.8rem 0; overflow: hidden; border: 1px solid #334155;">
+                        <div style="width: {p_pct}%; height: 100%; background: {color}; border-radius: 4px;"></div>
+                    </div>
                     <div class="phase-meta">📅 <strong>Timeline:</strong> {p.get('start_date')} to {p.get('target_date')} ({p.get('days')} days)</div>
                     <div class="phase-meta">⏰ <strong>Allocated Hours:</strong> {p.get('allocated_hours')} study hours</div>
                 </div>

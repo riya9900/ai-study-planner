@@ -96,3 +96,4 @@ def extract_text_from_upload(uploaded_file) -> Tuple[str, Dict[str, Any]]:
 
 if __name__ == "__main__":
     print("Syllabus parser module ready.")
+
