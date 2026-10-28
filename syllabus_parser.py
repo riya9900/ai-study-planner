@@ -11,7 +11,7 @@ from pptx import Presentation
 load_dotenv()
 
 def _ocr_with_gemini(file_bytes: bytes, mime_type: str = "application/pdf") -> str:
-    """Uses Google Gemini Multimodal Vision to extract text from scanned/image-based documents."""
+    """Uses Google Gemini Multimodal Vision to extract text from scanned or image-based documents."""
     from google import genai
     from google.genai import types
 
@@ -26,12 +26,13 @@ def _ocr_with_gemini(file_bytes: bytes, mime_type: str = "application/pdf") -> s
     part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
     prompt = (
         "You are an expert academic document transcriber. "
-        "Extract all syllabus units, course titles, module topics, learning outcomes, chapters, "
+        "Extract all syllabus units, course codes, course titles, module topics, learning outcomes, chapters, "
         "and detailed headings from this scanned document. "
         "Preserve the exact unit names, numbers, and technical terms as written."
     )
 
-    models_to_try = ["gemini-2.5-flash", "gemini-flash-latest"]
+    # Put gemini-3-flash-preview first for high speed and fresh quota
+    models_to_try = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
     last_err = None
 
     for model_name in models_to_try:
@@ -44,7 +45,7 @@ def _ocr_with_gemini(file_bytes: bytes, mime_type: str = "application/pdf") -> s
                 return response.text.strip()
         except Exception as e:
             last_err = e
-            time.sleep(1.5)
+            time.sleep(1)
             continue
 
     raise RuntimeError(f"AI OCR failed to extract text from scanned document: {last_err}")
@@ -103,7 +104,25 @@ def extract_text_from_upload(uploaded_file) -> Tuple[str, Dict[str, Any]]:
             else:
                 # Scanned or image-based PDF detected -> Use AI Multimodal OCR
                 metadata["extraction_method"] = "scanned_pdf_ai_ocr"
-                extracted_text = _ocr_with_gemini(file_bytes, mime_type="application/pdf")
+
+                # If the PDF has an embedded image directly, extract it for faster OCR
+                extracted_image_bytes = None
+                img_mime = "application/pdf"
+                
+                try:
+                    for page in reader.pages:
+                        if page.images and len(page.images) > 0:
+                            first_img = page.images[0]
+                            extracted_image_bytes = first_img.data
+                            img_mime = "image/png" if first_img.name.lower().endswith(".png") else "image/jpeg"
+                            break
+                except Exception:
+                    extracted_image_bytes = None
+
+                bytes_to_send = extracted_image_bytes if extracted_image_bytes else file_bytes
+                mime_to_send = img_mime if extracted_image_bytes else "application/pdf"
+
+                extracted_text = _ocr_with_gemini(bytes_to_send, mime_type=mime_to_send)
 
         # -----------------------------------------------------
         # 2. PowerPoint Presentations (PPTX, PPT)
@@ -180,11 +199,4 @@ def extract_text_from_upload(uploaded_file) -> Tuple[str, Dict[str, Any]]:
         return "", metadata
 
 if __name__ == "__main__":
-    import sys
-    print("Testing syllabus_parser with Doc1.pdf...")
-    with open("Doc1.pdf", "rb") as f:
-        txt, meta = extract_text_from_upload(f)
-    print("Status:", meta["status"])
-    print("Method:", meta["extraction_method"])
-    print("Words:", meta["word_count"])
-    print("Preview:\n", txt[:300])
+    print("Syllabus parser module ready.")

@@ -157,8 +157,9 @@ Please generate:
 """
 
     # 4. Initialize client and execute with model fallback
+    # gemini-3-flash-preview is placed first to avoid 429 quota exhaustion on older models
     client = get_gemini_client()
-    models_to_try = ["gemini-2.5-flash", "gemini-flash-latest"]
+    models_to_try = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
     last_error: Optional[Exception] = None
 
     for model_name in models_to_try:
