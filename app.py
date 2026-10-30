@@ -3,6 +3,7 @@ import datetime
 
 from agent import generate_study_plan
 from syllabus_parser import extract_text_from_upload
+from progress_tracker import parse_study_plan_tasks, render_study_progress_tracker
 
 # ---------------------------------------------------------
 # Page Configuration
@@ -309,6 +310,15 @@ if generate_btn:
                 st.session_state["study_plan_result"] = result
                 st.session_state["generated_subject"] = effective_subject
                 st.session_state["generated_exam_date"] = exam_date
+
+                # Parse and initialize tasks for progress tracking
+                tasks = parse_study_plan_tasks(result.get("plan_markdown", ""), result.get("schedule_data", {}))
+                st.session_state["study_tasks"] = tasks
+                # Clear any previous task completion state
+                for k in list(st.session_state.keys()):
+                    if k.startswith("task_"):
+                        del st.session_state[k]
+
                 st.success("✅ Personalized Study Plan generated successfully!")
             except Exception as e:
                 st.error(f"❌ Generation error: {e}")
@@ -379,7 +389,16 @@ if plan_result:
 
     st.divider()
 
-    # 3. Main Content Tabs
+    # Ensure study tasks are loaded if returning to existing session
+    if "study_tasks" not in st.session_state or not st.session_state["study_tasks"]:
+        st.session_state["study_tasks"] = parse_study_plan_tasks(plan_markdown, schedule_data)
+
+    # 3. 📊 Study Progress Section
+    render_study_progress_tracker(st.session_state.get("study_tasks", []))
+
+    st.divider()
+
+    # 4. Main Content Tabs
     tab_roadmap, tab_timeline, tab_pomodoro, tab_source = st.tabs([
         "📅 Day-by-Day Study Roadmap",
         "🏁 Milestone & Phase Breakdown",
