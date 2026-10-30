@@ -198,17 +198,18 @@ with st.sidebar:
     # Dynamic pacing: If exam date is provided, calculate exact countdown; else provide self-paced duration
     if exam_date is not None:
         has_deadline = True
-        raw_days_left = (exam_date - today).days
-        total_days = max(1, raw_days_left + 1)
-        is_emergency = total_days <= 3
+        days_left = max(0, (exam_date - today).days)
+        total_days = max(1, days_left)
+        is_emergency = days_left <= 3
 
+        day_text = "1 Day Left" if days_left == 1 else f"{days_left} Days Left"
         if is_emergency:
             st.markdown(
-                f'<div class="badge-emergency">🚨 <strong>{total_days} Day(s) Left!</strong> Emergency Countdown Mode will activate.</div>',
+                f'<div class="badge-emergency">🚨 <strong>{day_text}!</strong> Emergency Countdown Mode will activate.</div>',
                 unsafe_allow_html=True
             )
         else:
-            st.caption(f"🗓️ **{total_days} days** available until your exam on {exam_date.strftime('%b %d, %Y')}.")
+            st.caption(f"🗓️ **{day_text}** available until your exam on {exam_date.strftime('%b %d, %Y')}.")
     else:
         has_deadline = False
         is_emergency = False
@@ -343,10 +344,11 @@ if plan_result:
         days_left = summary.get("days_left", 0)
         target_dt_str = summary.get("exam_date", str(st.session_state.get("generated_exam_date", "")))
         
+        day_str = "1 DAY" if days_left == 1 else f"{days_left} DAYS"
         if is_emg:
             st.markdown(f"""
             <div class="emergency-banner">
-                <h2 style="margin: 0; color: #FEE2E2; font-size: 1.8rem;">🚨 EXAM COUNTDOWN: {days_left + 1} DAY{'S' if (days_left + 1) != 1 else ''} REMAINING</h2>
+                <h2 style="margin: 0; color: #FEE2E2; font-size: 1.8rem;">🚨 EXAM COUNTDOWN: {day_str} REMAINING</h2>
                 <p style="margin: 0.4rem 0 0 0; color: #FECACA; font-size: 1.05rem;">
                     Exam Date: <strong>{target_dt_str}</strong> — <strong>Emergency Mode Active</strong> (High-yield focus, core triage, and rapid drills)
                 </p>
@@ -355,7 +357,7 @@ if plan_result:
         else:
             st.markdown(f"""
             <div class="countdown-banner">
-                <h2 style="margin: 0; color: #38BDF8; font-size: 1.8rem;">🎯 EXAM COUNTDOWN: {days_left} DAYS LEFT</h2>
+                <h2 style="margin: 0; color: #38BDF8; font-size: 1.8rem;">🎯 EXAM COUNTDOWN: {day_str} LEFT</h2>
                 <p style="margin: 0.4rem 0 0 0; color: #94A3B8; font-size: 1.05rem;">
                     Target Exam Date: <strong>{target_dt_str}</strong> &nbsp;|&nbsp; Start: <strong>{summary.get('start_date')}</strong>
                 </p>
@@ -377,7 +379,8 @@ if plan_result:
     # 2. Metric Overview Cards
     m1, m2, m3, m4, m5 = st.columns(5)
     with m1:
-        st.metric("Total Days", f"{summary.get('total_days', total_days)} Days")
+        tot_d = summary.get('total_days', total_days)
+        st.metric("Total Days", f"{tot_d} {'Day' if tot_d == 1 else 'Days'}")
     with m2:
         st.metric("Active Study Days", f"{summary.get('active_study_days', '-')} Days")
     with m3:

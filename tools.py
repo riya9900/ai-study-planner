@@ -32,8 +32,8 @@ def calculate_study_schedule(
             target_exam_date = datetime.date.fromisoformat(exam_date_str.strip())
         except ValueError:
             target_exam_date = start_date + datetime.timedelta(days=total_days - 1)
-        days_left = (target_exam_date - start_date).days
-        is_emergency = total_days <= 3
+        days_left = max(0, (target_exam_date - start_date).days)
+        is_emergency = days_left <= 3
     else:
         target_exam_date = start_date + datetime.timedelta(days=total_days - 1)
         days_left = None
